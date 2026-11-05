@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --color-night: #05060b;
+  --color-cream: #f3ecdc;
+  --color-cream-dark: #151510;
+  --color-amber: #ffb454;
+  --color-orchid: #b48cff;
+  --color-mint: #6ff2c2;
+  --color-coral: #ff6f91;
+}
+
+:root {
+  --u: min(calc(100vw / 1600), calc(100vh / 900));
+}
+
+@media (max-width: 820px) {
+  :root {
+    --u: 1px;
+  }
+}
+
+html, body {
+  background-color: #05060b;
+  color: #f3ecdc;
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+/* Accessibility focus ring */
+:focus-visible {
+  outline: 2px solid #f3ecdc;
+  outline-offset: 2px;
+}
+
+/* Film grain subtle overlay */
+.film-grain {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.038;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #05060b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(243, 236, 220, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(243, 236, 220, 0.3);
+}

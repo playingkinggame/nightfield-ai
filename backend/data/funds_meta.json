@@ -1,0 +1,25 @@
+{
+  "_note": "AUM, expense ratio and top holdings are NOT in mfapi. These are rough, hand-curated figures that go stale - verify on the AMC factsheet. NAV and returns are always live from mfapi. Scheme codes are resolved at runtime via mfapi search (searchQuery + matchTerms).",
+  "funds": [
+    {"searchQuery": "UTI Nifty 50 Index Fund", "matchTerms": ["uti", "nifty 50", "direct", "growth"], "name": "UTI Nifty 50 Index Fund - Direct Growth", "category": "Index Fund - Nifty 50", "aumCr": 25000, "expenseRatio": 0.2, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Tracks the Nifty 50 index."},
+    {"searchQuery": "HDFC Index Fund Nifty 50 Plan", "matchTerms": ["hdfc", "nifty 50", "direct", "growth"], "name": "HDFC Index Fund - Nifty 50 Plan - Direct Growth", "category": "Index Fund - Nifty 50", "aumCr": 20000, "expenseRatio": 0.2, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Tracks the Nifty 50 index."},
+    {"searchQuery": "SBI Nifty Index Fund", "matchTerms": ["sbi", "nifty index", "direct", "growth"], "name": "SBI Nifty Index Fund - Direct Growth", "category": "Index Fund - Nifty 50", "aumCr": 15000, "expenseRatio": 0.2, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Tracks the Nifty 50 index."},
+    {"searchQuery": "ICICI Prudential Nifty 50 Index Fund", "matchTerms": ["icici", "nifty 50 index", "direct", "growth"], "name": "ICICI Prudential Nifty 50 Index Fund - Direct Growth", "category": "Index Fund - Nifty 50", "aumCr": 17000, "expenseRatio": 0.17, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Tracks the Nifty 50 index."},
+    {"searchQuery": "Nippon India Index Fund Nifty 50 Plan", "matchTerms": ["nippon", "nifty 50", "direct", "growth"], "name": "Nippon India Index Fund - Nifty 50 Plan - Direct Growth", "category": "Index Fund - Nifty 50", "aumCr": 4000, "expenseRatio": 0.2, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Tracks the Nifty 50 index."},
+    {"searchQuery": "Nippon India ETF Nifty 50 BeES", "matchTerms": ["nippon", "nifty 50 bees"], "name": "Nippon India ETF Nifty 50 BeES", "category": "ETF - Nifty 50", "aumCr": 30000, "expenseRatio": 0.04, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Exchange-traded fund tracking the Nifty 50."},
+    {"searchQuery": "SBI Nifty 50 ETF", "matchTerms": ["sbi", "nifty 50 etf"], "name": "SBI Nifty 50 ETF", "category": "ETF - Nifty 50", "aumCr": 200000, "expenseRatio": 0.04, "riskRating": "Very High", "topHoldings": "NIFTY50", "description": "Exchange-traded fund tracking the Nifty 50."},
+    {"searchQuery": "HDFC Index Fund BSE Sensex Plan", "matchTerms": ["hdfc", "sensex", "direct", "growth"], "name": "HDFC Index Fund - BSE Sensex Plan - Direct Growth", "category": "Index Fund - Sensex", "aumCr": 7000, "expenseRatio": 0.2, "riskRating": "Very High", "topHoldings": [], "description": "Tracks the BSE Sensex."},
+    {"searchQuery": "UTI Nifty Next 50 Index Fund", "matchTerms": ["uti", "next 50", "direct", "growth"], "name": "UTI Nifty Next 50 Index Fund - Direct Growth", "category": "Index Fund - Nifty Next 50", "aumCr": 5000, "expenseRatio": 0.3, "riskRating": "Very High", "topHoldings": [], "description": "Tracks the Nifty Next 50 index."},
+    {"searchQuery": "Nippon India ETF Nifty Bank BeES", "matchTerms": ["nippon", "bank bees"], "name": "Nippon India ETF Nifty Bank BeES", "category": "ETF - Nifty Bank", "aumCr": 6000, "expenseRatio": 0.19, "riskRating": "Very High", "topHoldings": [], "description": "Exchange-traded fund tracking the Nifty Bank index."}
+  ],
+  "holdingsTemplates": {
+    "NIFTY50": [
+      {"symbol": "HDFCBANK.NS", "name": "HDFC Bank", "percentage": 13.0},
+      {"symbol": "RELIANCE.NS", "name": "Reliance Industries", "percentage": 8.5},
+      {"symbol": "ICICIBANK.NS", "name": "ICICI Bank", "percentage": 8.0},
+      {"symbol": "INFY.NS", "name": "Infosys", "percentage": 5.0},
+      {"symbol": "BHARTIARTL.NS", "name": "Bharti Airtel", "percentage": 4.5},
+      {"symbol": "TCS.NS", "name": "Tata Consultancy Services", "percentage": 3.8}
+    ]
+  }
+}

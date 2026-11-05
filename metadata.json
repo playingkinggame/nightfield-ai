@@ -1,0 +1,6 @@
+{
+  "name": "NIGHTFIELD",
+  "description": "AI-powered stock and index fund research platform. See the market bloom through a living data garden and autonomous intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
