@@ -1,18 +1,23 @@
 /**
- * Supabase Auth placeholder for NIGHTFIELD
- * Provides seamless mock authentication for the preview environment,
- * with drop-in configuration for real Supabase / OAuth credentials.
+ * Auth for NIGHTFIELD.
+ * Live mode: real email/password accounts via the FastAPI backend (/api/auth/*), JWT kept in localStorage.
+ * Mock mode (VITE_USE_MOCK=true): local demo session, no backend needed.
  */
+
+import { USE_MOCK, TOKEN_KEY, UNAUTHORIZED_EVENT, getToken, request } from "./http";
 
 export interface User {
   id: string;
   email: string;
   name: string;
-  avatarUrl?: string;
-  createdAt: string;
 }
 
-const AUTH_STORAGE_KEY = "nightfield_session_user";
+interface AuthResponse {
+  token: string;
+  user: { id: number; email: string; name: string };
+}
+
+const USER_KEY = "nightfield_session_user";
 
 export class AuthService {
   private currentUser: User | null = null;
@@ -20,17 +25,24 @@ export class AuthService {
 
   constructor() {
     try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
-        this.currentUser = JSON.parse(stored);
-      }
+      const stored = localStorage.getItem(USER_KEY);
+      // A stored user without a token is a stale (pre-backend) session - drop it in live mode.
+      if (stored && (USE_MOCK || getToken())) this.currentUser = JSON.parse(stored);
+      else if (stored) localStorage.removeItem(USER_KEY);
     } catch {
-      // LocalStorage access may be restricted
+      /* storage unavailable */
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener(UNAUTHORIZED_EVENT, () => this.clear());
     }
   }
 
   public getUser(): User | null {
     return this.currentUser;
+  }
+
+  public isAuthenticated(): boolean {
+    return this.currentUser !== null;
   }
 
   public subscribe(cb: (user: User | null) => void): () => void {
@@ -41,58 +53,73 @@ export class AuthService {
     };
   }
 
-  public async signInWithEmail(email: string, _password?: string): Promise<User> {
-    await new Promise((r) => setTimeout(r, 400));
-    const user: User = {
-      id: "usr_" + Math.random().toString(36).substring(2, 9),
-      email,
-      name: email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      createdAt: new Date().toISOString(),
-    };
+  public async signInWithEmail(email: string, password: string): Promise<User> {
+    if (USE_MOCK) return this.mockUser(email);
+    const res = await request<AuthResponse>("/api/auth/login", { method: "POST", body: { email, password } });
+    return this.accept(res);
+  }
+
+  public async signUpWithEmail(email: string, password: string, name: string): Promise<User> {
+    if (USE_MOCK) return this.mockUser(email, name);
+    const res = await request<AuthResponse>("/api/auth/signup", {
+      method: "POST",
+      body: { email, password, name: name.trim() || email.split("@")[0] },
+    });
+    return this.accept(res);
+  }
+
+  /** Re-validate a stored token against the backend (called once on app start). */
+  public async refresh(): Promise<void> {
+    if (USE_MOCK || !getToken()) return;
+    try {
+      const me = await request<{ id: number; email: string; name: string }>("/api/auth/me", { auth: true });
+      this.setUser({ id: String(me.id), email: me.email, name: me.name });
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) this.clear();
+    }
+  }
+
+  public signOut(): void {
+    this.clear();
+  }
+
+  private accept(res: AuthResponse): User {
+    try {
+      localStorage.setItem(TOKEN_KEY, res.token);
+    } catch {
+      /* ignore */
+    }
+    const user = { id: String(res.user.id), email: res.user.email, name: res.user.name };
     this.setUser(user);
     return user;
   }
 
-  public async signUpWithEmail(email: string, _password?: string, name?: string): Promise<User> {
-    await new Promise((r) => setTimeout(r, 450));
+  private mockUser(email: string, name?: string): User {
     const user: User = {
-      id: "usr_" + Math.random().toString(36).substring(2, 9),
+      id: "demo_" + email,
       email,
       name: name || email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      createdAt: new Date().toISOString(),
     };
     this.setUser(user);
     return user;
   }
 
-  public async signInWithGoogle(): Promise<User> {
-    await new Promise((r) => setTimeout(r, 500));
-    const user: User = {
-      id: "usr_google_" + Math.random().toString(36).substring(2, 9),
-      email: "alexander.investor@gmail.com",
-      name: "Alexander Vance",
-      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80",
-      createdAt: new Date().toISOString(),
-    };
-    this.setUser(user);
-    return user;
-  }
-
-  public async signOut(): Promise<void> {
-    await new Promise((r) => setTimeout(r, 200));
+  private clear() {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
     this.setUser(null);
   }
 
   private setUser(user: User | null) {
     this.currentUser = user;
     try {
-      if (user) {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-      }
+      if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+      else localStorage.removeItem(USER_KEY);
     } catch {
-      // Ignore
+      /* ignore */
     }
     this.listeners.forEach((l) => l(user));
   }

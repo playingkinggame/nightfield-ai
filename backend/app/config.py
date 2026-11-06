@@ -50,8 +50,9 @@ class Settings:
 
     @property
     def cors_origins(self) -> list[str]:
-        origins = [self.frontend_origin, "http://localhost:5173"]
-        return list(dict.fromkeys(o for o in origins if o))
+        configured = [o.strip().rstrip("/") for o in self.frontend_origin.split(",")]
+        defaults = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+        return list(dict.fromkeys(o for o in configured + defaults if o))
 
 
 settings = Settings()

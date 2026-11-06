@@ -27,7 +27,7 @@ async def prices(ws: WebSocket, symbols: str = ""):
             res = await asyncio.gather(*[market.quick_quote(s) for s in syms], return_exceptions=True)
             for s, r in zip(syms, res):
                 if isinstance(r, dict):
-                    await ws.send_json({"symbol": s, "price": r["price"], "changePercent": r["changePercent"],
+                    await ws.send_json({"symbol": s, "price": r["price"], "change": r["change"], "changePercent": r["changePercent"],
                                         "ts": int(time.time()), "delayed": True, "note": "delayed ~15 min"})
                 else:
                     await ws.send_json({"symbol": s, "error": getattr(r, "detail", "price unavailable"),

@@ -95,6 +95,13 @@ export const AIChatDock: React.FC<AIChatDockProps> = ({
     setIsStreaming(true);
 
     let accumulatedContent = "";
+    const toolCallLog: ChatToolCall[] = []; // local mutable log: avoids the stale-closure bug on completion
+
+    // Previous turns (without the welcome banner) so the backend model has conversational context
+    const history = messages
+      .filter((m) => m.id !== "welcome" && m.content.trim())
+      .slice(-8)
+      .map((m) => ({ role: m.role, content: m.content }));
 
     // Add empty placeholder assistant message
     setMessages((prev) => [
@@ -108,57 +115,36 @@ export const AIChatDock: React.FC<AIChatDockProps> = ({
       },
     ]);
 
+    const patchBot = (patch: Partial<ChatMessage>) =>
+      setMessages((prev) => prev.map((msg) => (msg.id === botMsgId ? { ...msg, ...patch } : msg)));
+
     try {
       await api.streamChat({
         message: query,
         symbolContext: activeSymbol,
+        history,
         onToolCall: (toolCall) => {
-          setActiveToolCalls((prev) => {
-            const existing = prev.find((t) => t.id === toolCall.id);
-            if (existing) {
-              return prev.map((t) => (t.id === toolCall.id ? toolCall : t));
-            }
-            return [...prev, toolCall];
-          });
+          const i = toolCallLog.findIndex((t) => t.id === toolCall.id);
+          if (i >= 0) toolCallLog[i] = toolCall;
+          else toolCallLog.push(toolCall);
+          setActiveToolCalls([...toolCallLog]);
         },
         onChunk: (chunk) => {
           accumulatedContent += chunk;
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === botMsgId ? { ...msg, content: accumulatedContent } : msg
-            )
-          );
+          patchBot({ content: accumulatedContent });
         },
         onComplete: ({ citations, keyData }) => {
           setIsStreaming(false);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === botMsgId
-                ? {
-                    ...msg,
-                    content: accumulatedContent,
-                    toolCalls: [...activeToolCalls],
-                    citations,
-                    keyData,
-                  }
-                : msg
-            )
-          );
+          patchBot({ content: accumulatedContent, toolCalls: [...toolCallLog], citations, keyData });
         },
         onError: (err) => {
           setIsStreaming(false);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === botMsgId
-                ? {
-                    ...msg,
-                    content:
-                      accumulatedContent ||
-                      "I encountered an error connecting to the financial data tools. Please retry.",
-                  }
-                : msg
-            )
-          );
+          patchBot({
+            toolCalls: [...toolCallLog],
+            content: accumulatedContent
+              ? `${accumulatedContent}\n\n(Connection lost: ${err.message})`
+              : `Couldn't reach the research service: ${err.message}`,
+          });
         },
       });
     } catch {

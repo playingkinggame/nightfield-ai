@@ -1,7 +1,7 @@
 /**
- * Central API Gateway for NIGHTFIELD
- * Single point of connection for both mock evaluation preview and production FastAPI backend.
- * Switching between mock and live backend is controlled by VITE_USE_MOCK.
+ * Central API Gateway for NIGHTFIELD.
+ * Live mode  : every call goes to the FastAPI backend (see http.ts for base URL + auth).
+ * Mock mode  : VITE_USE_MOCK=true serves deterministic sample data (demo without a backend).
  */
 
 import {
@@ -14,201 +14,205 @@ import {
   CandleData,
   NewsItem,
 } from "../mock/marketData";
+import { MARKET_INDICES } from "./constants";
+import { USE_MOCK, WS_URL, ApiRequestError, request, toError, authHeaders, API_URL } from "./http";
+import { mockStore } from "./mockStore";
+import type {
+  SearchResult, IndexQuote, Portfolio, PortfolioSummary, TradeResult, Indicators, Signal, CompareResult,
+  PriceTick, ChatToolCall, ChatCitation, ChatKeyData, ChatMessage,
+} from "./types";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+export type { SearchResult, ChatToolCall, ChatMessage, IndexQuote, Portfolio, PortfolioSummary, TradeResult, Indicators, Signal, CompareResult, PriceTick };
+export { ApiRequestError, USE_MOCK };
 
-export interface SearchResult {
-  symbol: string;
-  name: string;
-  type: "stock" | "fund";
-  exchange: string;
-  price: number;
-  changePercent: number;
-}
+export type Period = "1D" | "1W" | "1M" | "6M" | "1Y" | "5Y";
 
-export interface ChatToolCall {
-  id: string;
-  tool: string;
-  status: "calling" | "complete";
-  details: string;
-}
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const enc = encodeURIComponent;
+const unavailableInDemo = (what: string) => new ApiRequestError(`${what} needs the live backend (demo mode is on).`, 0, "demo_mode");
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  toolCalls?: ChatToolCall[];
-  citations?: { title: string; url: string; source: string }[];
-  keyData?: { label: string; value: string }[];
-  timestamp: string;
-}
+const findMock = (symbol: string): StockQuote | undefined =>
+  STOCKS_DATA.find(
+    (s) => s.symbol.toUpperCase() === symbol.toUpperCase() || s.symbol.replace(".NS", "").toUpperCase() === symbol.toUpperCase()
+  );
 
 export const api = {
-  /**
-   * Search stocks, ETFs and index funds
-   */
+  // ------------------------------------------------------------------ market data
   async search(query: string): Promise<SearchResult[]> {
     if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 90));
-      if (!query || query.trim().length === 0) {
-        return STOCKS_DATA.slice(0, 6).map((s) => ({
-          symbol: s.symbol,
-          name: s.name,
-          type: "stock",
-          exchange: s.exchange,
-          price: s.price,
-          changePercent: s.changePercent,
-        }));
-      }
-
-      const q = query.toLowerCase();
-      const matchedStocks: SearchResult[] = STOCKS_DATA.filter(
-        (s) =>
-          s.symbol.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q) ||
-          s.sector.toLowerCase().includes(q)
-      ).map((s) => ({
-        symbol: s.symbol,
-        name: s.name,
-        type: "stock",
-        exchange: s.exchange,
-        price: s.price,
-        changePercent: s.changePercent,
-      }));
-
-      const matchedFunds: SearchResult[] = FUNDS_DATA.filter(
-        (f) =>
-          f.code.toLowerCase().includes(q) ||
-          f.name.toLowerCase().includes(q) ||
-          f.category.toLowerCase().includes(q)
-      ).map((f) => ({
-        symbol: f.code,
-        name: f.name,
-        type: "fund",
-        exchange: "MF",
-        price: f.nav,
-        changePercent: f.changePercent,
-      }));
-
-      return [...matchedStocks, ...matchedFunds];
+      await delay(90);
+      const q = query.trim().toLowerCase();
+      const stocks: SearchResult[] = STOCKS_DATA.filter(
+        (s) => !q || s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.sector.toLowerCase().includes(q)
+      ).map((s) => ({ symbol: s.symbol, name: s.name, type: "stock", exchange: s.exchange, price: s.price, changePercent: s.changePercent }));
+      const funds: SearchResult[] = q
+        ? FUNDS_DATA.filter((f) => f.code.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)).map((f) => ({
+            symbol: f.code, name: f.name, type: "fund", exchange: "MF", price: f.nav, changePercent: f.changePercent,
+          }))
+        : [];
+      return [...stocks.slice(0, q ? 20 : 6), ...funds];
     }
-
-    const res = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error("Search request failed");
-    return res.json();
+    // Empty query: show the popular list instead of hitting the search endpoint with q=""
+    if (!query.trim()) {
+      const popular = await api.getPopular();
+      return popular.map((s) => ({ symbol: s.symbol, name: s.name, type: "stock" as const, exchange: s.exchange, price: s.price, changePercent: s.changePercent }));
+    }
+    return request<SearchResult[]>(`/api/search?q=${enc(query.trim())}`);
   },
 
-  /**
-   * Get single stock quote with complete metrics
-   */
   async getQuote(symbol: string): Promise<StockQuote> {
     if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 60));
-      const found = STOCKS_DATA.find(
-        (s) => s.symbol.toUpperCase() === symbol.toUpperCase() || s.symbol.replace(".NS", "").toUpperCase() === symbol.toUpperCase()
-      );
-      if (found) return found;
-
-      // Fallback dynamic quote if unknown symbol
-      return {
-        symbol: symbol.toUpperCase(),
-        name: `${symbol.toUpperCase()} Enterprise`,
-        exchange: "NSE",
-        sector: "Market Equities",
-        price: 2450.0,
-        change: 18.5,
-        changePercent: 0.76,
-        open: 2432.0,
-        high: 2468.0,
-        low: 2420.0,
-        previousClose: 2431.5,
-        volume: 3400000,
-        marketCapCr: 450000,
-        pe: 26.5,
-        eps: 92.4,
-        fiftyTwoWeekHigh: 2700.0,
-        fiftyTwoWeekLow: 1850.0,
-        beta: 1.02,
-        dividendYield: 1.05,
-        sparkline: [2410, 2425, 2418, 2440, 2435, 2450],
-        colorType: "amber",
-      };
+      await delay(60);
+      const found = findMock(symbol);
+      if (!found) throw new ApiRequestError(`No quote found for ${symbol}.`, 404, "not_found");
+      return found;
     }
-
-    const res = await fetch(`${API_URL}/api/stocks/${symbol}/quote`);
-    if (!res.ok) throw new Error("Quote fetch failed");
-    return res.json();
+    return request<StockQuote>(`/api/stocks/${enc(symbol)}/quote`);
   },
 
-  /**
-   * Get candle price history
-   */
-  async getHistory(
-    symbol: string,
-    period: "1D" | "1W" | "1M" | "6M" | "1Y" | "5Y" = "1M"
-  ): Promise<CandleData[]> {
+  async getHistory(symbol: string, period: Period = "1M"): Promise<CandleData[]> {
     if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 70));
-      const quote = await api.getQuote(symbol);
-      return generateCandleHistory(quote.price, period);
+      await delay(70);
+      return generateCandleHistory((await api.getQuote(symbol)).price, period);
     }
-
-    const res = await fetch(`${API_URL}/api/stocks/${symbol}/history?period=${period}`);
-    if (!res.ok) throw new Error("History fetch failed");
-    return res.json();
+    return request<CandleData[]>(`/api/stocks/${enc(symbol)}/history?period=${period}`);
   },
 
-  /**
-   * Get stock related news
-   */
   async getNews(symbol: string): Promise<NewsItem[]> {
     if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 50));
+      await delay(50);
       return MOCK_NEWS[symbol] || MOCK_NEWS.default;
     }
-
-    const res = await fetch(`${API_URL}/api/stocks/${symbol}/news`);
-    if (!res.ok) throw new Error("News fetch failed");
-    return res.json();
+    return request<NewsItem[]>(`/api/stocks/${enc(symbol)}/news`);
   },
 
-  /**
-   * Get index fund details
-   */
+  async getIndicators(symbol: string, period = "6M"): Promise<Indicators> {
+    if (USE_MOCK) throw unavailableInDemo("Technical indicators");
+    return request<Indicators>(`/api/stocks/${enc(symbol)}/indicators?period=${period}`);
+  },
+
+  async getSignal(symbol: string): Promise<Signal> {
+    if (USE_MOCK) throw unavailableInDemo("The signal summary");
+    return request<Signal>(`/api/stocks/${enc(symbol)}/signal`);
+  },
+
+  async compare(symbols: string[], period = "1Y"): Promise<CompareResult> {
+    if (USE_MOCK) throw unavailableInDemo("Compare mode");
+    return request<CompareResult>(`/api/compare?symbols=${enc(symbols.join(","))}&period=${period}`);
+  },
+
+  async getIndices(): Promise<IndexQuote[]> {
+    if (USE_MOCK) return MARKET_INDICES.map((i) => ({ ...i, delayed: false }));
+    return request<IndexQuote[]>("/api/market/indices");
+  },
+
+  async getPopular(): Promise<StockQuote[]> {
+    if (USE_MOCK) return STOCKS_DATA.filter((s) => s.colorType !== "mint").slice(0, 8);
+    return request<StockQuote[]>("/api/market/popular");
+  },
+
+  // ------------------------------------------------------------------ funds
   async getFund(code: string): Promise<FundData> {
     if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 60));
       const fund = FUNDS_DATA.find((f) => f.code.toUpperCase() === code.toUpperCase());
-      if (fund) return fund;
-      return FUNDS_DATA[0];
+      if (!fund) throw new ApiRequestError(`Fund ${code} not found.`, 404, "not_found");
+      return fund;
     }
-
-    const res = await fetch(`${API_URL}/api/funds/${code}/nav`);
-    if (!res.ok) throw new Error("Fund fetch failed");
-    return res.json();
+    return request<FundData>(`/api/funds/${enc(code)}/nav`);
   },
 
-  /**
-   * Get all index funds
-   */
   async getAllFunds(): Promise<FundData[]> {
-    if (USE_MOCK) {
-      await new Promise((r) => setTimeout(r, 50));
-      return FUNDS_DATA;
-    }
-
-    const res = await fetch(`${API_URL}/api/funds`);
-    if (!res.ok) throw new Error("Funds listing failed");
-    return res.json();
+    if (USE_MOCK) return FUNDS_DATA;
+    return request<FundData[]>("/api/funds");
   },
 
+  // ------------------------------------------------------------------ watchlist (auth required in live mode)
+  async getWatchlist(): Promise<StockQuote[]> {
+    if (USE_MOCK) return mockStore.watchlist();
+    return request<StockQuote[]>("/api/watchlist", { auth: true });
+  },
+  async addToWatchlist(symbol: string): Promise<StockQuote[]> {
+    if (USE_MOCK) return mockStore.addWatch(symbol);
+    return request<StockQuote[]>("/api/watchlist", { method: "POST", body: { symbol }, auth: true });
+  },
+  async removeFromWatchlist(symbol: string): Promise<StockQuote[]> {
+    if (USE_MOCK) return mockStore.removeWatch(symbol);
+    return request<StockQuote[]>(`/api/watchlist/${enc(symbol)}`, { method: "DELETE", auth: true });
+  },
+
+  // ------------------------------------------------------------------ paper portfolio (auth required in live mode)
+  async getPortfolio(): Promise<Portfolio> {
+    if (USE_MOCK) return mockStore.portfolio();
+    return request<Portfolio>("/api/portfolio", { auth: true });
+  },
+  async getPortfolioSummary(): Promise<PortfolioSummary> {
+    if (USE_MOCK) return mockStore.summary();
+    return request<PortfolioSummary>("/api/portfolio/summary", { auth: true });
+  },
+  async trade(symbol: string, side: "buy" | "sell", quantity: number): Promise<TradeResult> {
+    if (USE_MOCK) {
+      try {
+        return mockStore.trade(symbol, side, quantity);
+      } catch (e) {
+        throw new ApiRequestError((e as Error).message, 400, "bad_request");
+      }
+    }
+    return request<TradeResult>("/api/portfolio/trade", { method: "POST", body: { symbol, side, quantity }, auth: true });
+  },
+  async resetPortfolio(): Promise<Portfolio> {
+    if (USE_MOCK) return mockStore.reset();
+    return request<Portfolio>("/api/portfolio/reset", { method: "POST", auth: true });
+  },
+
+  // ------------------------------------------------------------------ live prices (WebSocket)
   /**
-   * Stream research AI conversation with tool calls & citations
+   * Subscribe to price ticks for up to 10 symbols. Auto-reconnects with backoff.
+   * Returns an unsubscribe function. In mock mode no ticks are emitted.
    */
+  subscribePrices(symbols: string[], onTick: (t: PriceTick) => void, onStatus?: (connected: boolean) => void): () => void {
+    const list = [...new Set(symbols.filter(Boolean))].slice(0, 10);
+    if (USE_MOCK || list.length === 0 || typeof WebSocket === "undefined") return () => {};
+
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(`${WS_URL}/ws/prices?symbols=${enc(list.join(","))}`);
+      ws.onopen = () => {
+        attempt = 0;
+        onStatus?.(true);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          onTick(JSON.parse(ev.data) as PriceTick);
+        } catch {
+          /* ignore malformed frame */
+        }
+      };
+      ws.onclose = () => {
+        onStatus?.(false);
+        if (closed) return;
+        timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempt++));
+      };
+      ws.onerror = () => ws?.close();
+    };
+    connect();
+
+    return () => {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      ws?.close();
+    };
+  },
+
+  // ------------------------------------------------------------------ AI chat (SSE)
   async streamChat({
     message,
     symbolContext,
+    history,
     onToolCall,
     onChunk,
     onComplete,
@@ -216,148 +220,79 @@ export const api = {
   }: {
     message: string;
     symbolContext?: string;
+    history?: { role: "user" | "assistant"; content: string }[];
     onToolCall: (toolCall: ChatToolCall) => void;
     onChunk: (text: string) => void;
-    onComplete: (metadata: { citations: { title: string; url: string; source: string }[]; keyData?: { label: string; value: string }[] }) => void;
+    onComplete: (metadata: { citations: ChatCitation[]; keyData?: ChatKeyData[] }) => void;
     onError: (err: Error) => void;
   }): Promise<() => void> {
+    if (USE_MOCK) return runMockChat({ message, symbolContext, onToolCall, onChunk, onComplete, onError });
+
+    const controller = new AbortController();
     let aborted = false;
-    const abort = () => {
-      aborted = true;
+    let finished = false;
+    let citations: ChatCitation[] = [];
+    let keyData: ChatKeyData[] | undefined;
+
+    const finish = () => {
+      if (finished || aborted) return;
+      finished = true;
+      onComplete({ citations, keyData });
     };
 
-    if (USE_MOCK) {
-      const runMockStream = async () => {
-        try {
-          const sym = symbolContext || (message.toUpperCase().includes("TCS") ? "TCS.NS" : message.toUpperCase().includes("RELIANCE") ? "RELIANCE.NS" : "NIFTY 50");
-
-          // Step 1: Simulate first tool call
-          await new Promise((r) => setTimeout(r, 400));
-          if (aborted) return;
-          onToolCall({
-            id: "tool-1",
-            tool: `get_price_history("${sym}")`,
-            status: "calling",
-            details: "Fetching 1Y adjusted closing prices and momentum indicators...",
-          });
-
-          await new Promise((r) => setTimeout(r, 700));
-          if (aborted) return;
-          onToolCall({
-            id: "tool-1",
-            tool: `get_price_history("${sym}")`,
-            status: "complete",
-            details: "Retrieved 250 daily bars. 50-DMA: ₹3,980. RSI: 54.2.",
-          });
-
-          // Step 2: Second tool call
-          await new Promise((r) => setTimeout(r, 400));
-          if (aborted) return;
-          onToolCall({
-            id: "tool-2",
-            tool: `get_regulatory_filings("${sym}")`,
-            status: "calling",
-            details: "Parsing latest quarterly results & investor presentation...",
-          });
-
-          await new Promise((r) => setTimeout(r, 700));
-          if (aborted) return;
-          onToolCall({
-            id: "tool-2",
-            tool: `get_regulatory_filings("${sym}")`,
-            status: "complete",
-            details: "Operating margin confirmed at 25.4%. Zero long-term debt.",
-          });
-
-          // Step 3: Stream synthesized analytical thesis
-          const sampleParagraphs = [
-            `### Fundamental & Valuation Analysis: **${sym}**\n\n`,
-            `Based on freshly verified market ticks and audited filings, `,
-            `${sym} is currently exhibiting sustained earnings compound power. `,
-            `The company's Trailing Twelve Month (TTM) P/E ratio is trading within its 3-year historical median band of 28.4x to 31.2x. `,
-            `Operating margins of **25.4%** remain best-in-class against peers, sustained by continuous deal pipeline expansion and cloud enterprise transformations.\n\n`,
-            `**Key Takeaways for Investors:**\n`,
-            `1. **Balance Sheet Fortitude:** Negligible net leverage with substantial free cash flow yield (>4.1%).\n`,
-            `2. **Capital Return:** Steady dividend payout ratio exceeding 65% alongside periodic share repurchases.\n`,
-            `3. **Technical Setup:** The price is resting comfortably above both the 50-day and 200-day simple moving averages, indicating constructive structural trend without signs of euphoria.\n\n`,
-            `*Recommendation posture:* High-quality compounder for dollar-cost averaging / SIP into market pullbacks.`,
-          ];
-
-          for (const para of sampleParagraphs) {
-            for (let i = 0; i < para.length; i += 6) {
-              if (aborted) return;
-              onChunk(para.slice(i, i + 6));
-              await new Promise((r) => setTimeout(r, 18));
-            }
-          }
-
-          onComplete({
-            citations: [
-              { title: "BSE Audited Financial Statements Q3", url: "https://www.bseindia.com", source: "BSE Corporate Disclosures" },
-              { title: "NSE Live Real-Time Feed", url: "https://www.nseindia.com", source: "National Stock Exchange of India" },
-              { title: "RBI Macroeconomic Credit Bulletin", url: "https://www.rbi.org.in", source: "Reserve Bank of India" },
-            ],
-            keyData: [
-              { label: "P/E (TTM)", value: "31.2x" },
-              { label: "ROCE", value: "48.2%" },
-              { label: "50-DMA", value: "₹3,980.50" },
-              { label: "FCF Yield", value: "4.15%" },
-            ],
-          });
-        } catch (err) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+    const handleBlock = (block: string) => {
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const raw of block.split("\n")) {
+        if (raw.startsWith(":")) continue; // SSE comment / heartbeat
+        if (raw.startsWith("event:")) event = raw.slice(6).trim();
+        else if (raw.startsWith("data:")) dataLines.push(raw.slice(5).replace(/^ /, ""));
+      }
+      if (dataLines.length === 0) return;
+      const payload = dataLines.join("\n");
+      if (payload === "[DONE]") return finish();
+      try {
+        const parsed = JSON.parse(payload);
+        if (event === "tool") onToolCall(parsed as ChatToolCall);
+        else if (typeof parsed.chunk === "string") onChunk(parsed.chunk);
+        else if (parsed.citations || parsed.keyData) {
+          citations = parsed.citations ?? [];
+          keyData = parsed.keyData ?? undefined;
         }
-      };
+      } catch {
+        /* ignore non-JSON frame */
+      }
+    };
 
-      runMockStream();
-      return abort;
-    }
+    (async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ message, symbol: symbolContext || null, history: history?.slice(-8) ?? null }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw await toError(response);
+        if (!response.body) throw new Error("The server returned an empty response.");
 
-    // Live backend SSE implementation
-    const controller = new AbortController();
-    fetch(`${API_URL}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, symbol: symbolContext }),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.body) throw new Error("No response body");
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-
-        while (true) {
+        for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("event: tool")) {
-              const dataLine = line.split("\n").find((l) => l.startsWith("data: "));
-              if (dataLine) onToolCall(JSON.parse(dataLine.replace("data: ", "")));
-            } else if (line.startsWith("data: ")) {
-              const payload = line.replace("data: ", "");
-              if (payload === "[DONE]") {
-                onComplete({ citations: [] });
-                return;
-              }
-              try {
-                const parsed = JSON.parse(payload);
-                if (parsed.chunk) onChunk(parsed.chunk);
-                if (parsed.citations) onComplete({ citations: parsed.citations, keyData: parsed.keyData });
-              } catch {
-                onChunk(payload);
-              }
-            }
-          }
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+          blocks.forEach(handleBlock);
         }
-      })
-      .catch((err) => {
-        if (!aborted) onError(err);
-      });
+        if (buffer.trim()) handleBlock(buffer);
+        finish();
+      } catch (err) {
+        if (aborted || (err as Error).name === "AbortError") return;
+        onError(err instanceof ApiRequestError ? err : new ApiRequestError(`Cannot reach the backend at ${API_URL}. Is it running?`, 0, "network_error"));
+      }
+    })();
 
     return () => {
       aborted = true;
@@ -365,3 +300,38 @@ export const api = {
     };
   },
 };
+
+/** Scripted demo stream used only when VITE_USE_MOCK=true. */
+function runMockChat(p: {
+  message: string;
+  symbolContext?: string;
+  onToolCall: (t: ChatToolCall) => void;
+  onChunk: (t: string) => void;
+  onComplete: (m: { citations: ChatCitation[]; keyData?: ChatKeyData[] }) => void;
+  onError: (e: Error) => void;
+}): () => void {
+  let aborted = false;
+  (async () => {
+    try {
+      const sym = p.symbolContext || "NIFTY 50";
+      await delay(300);
+      if (aborted) return;
+      p.onToolCall({ id: "t1", tool: `get_price_history("${sym}")`, status: "calling", details: "Fetching 1Y prices..." });
+      await delay(500);
+      if (aborted) return;
+      p.onToolCall({ id: "t1", tool: `get_price_history("${sym}")`, status: "complete", details: "Demo data retrieved." });
+      const text = `**Demo mode** - this is a scripted reply for ${sym}. Start the backend and set VITE_USE_MOCK=false for live AI research.`;
+      for (let i = 0; i < text.length; i += 6) {
+        if (aborted) return;
+        p.onChunk(text.slice(i, i + 6));
+        await delay(18);
+      }
+      p.onComplete({ citations: [], keyData: [] });
+    } catch (e) {
+      p.onError(e instanceof Error ? e : new Error(String(e)));
+    }
+  })();
+  return () => {
+    aborted = true;
+  };
+}

@@ -1,7 +1,7 @@
 /**
  * Terminal Header for NIGHTFIELD
  * Features:
- * - Live NSE/BSE ticker strip (Nifty 50, Sensex, Bank Nifty, Nifty IT) with micro-ticks
+ * - NSE/BSE index strip (Nifty 50, Sensex, Bank Nifty, Nifty IT) polled from the backend every 15s (data is ~15 min delayed)
  * - Global Cmd+K Search trigger
  * - Indian Standard Time (IST) market clock
  * - AI Chat Dock toggle
@@ -19,7 +19,9 @@ import {
   Clock,
   Circle,
 } from "lucide-react";
-import { MARKET_INDICES, APP_NAME } from "../../lib/constants";
+import { APP_NAME } from "../../lib/constants";
+import { api } from "../../lib/api";
+import { usePolling } from "../../lib/hooks";
 
 interface TerminalHeaderProps {
   onOpenSearch: () => void;
@@ -32,45 +34,30 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
   isChatOpen,
   onToggleChat,
 }) => {
-  const [indices, setIndices] = useState(MARKET_INDICES);
   const [istTime, setIstTime] = useState("");
+  const [marketOpen, setMarketOpen] = useState(false);
 
-  // Live IST Clock and subtle realistic market micro-fluctuations
+  // Real index data from the backend (no simulated ticks)
+  const { data: indices, error: indicesError } = usePolling(() => api.getIndices(), 15000);
+
+  // IST clock + NSE session status (Mon-Fri 09:15-15:30 IST)
   useEffect(() => {
-    const updateTime = () => {
+    const update = () => {
       const now = new Date();
-      // Format in IST (Asia/Kolkata)
-      const formatted = now.toLocaleTimeString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-      setIstTime(`${formatted} IST`);
-    };
-
-    updateTime();
-    const timeInterval = setInterval(updateTime, 1000);
-
-    // Micro-ticks every 4 seconds
-    const tickInterval = setInterval(() => {
-      setIndices((prev) =>
-        prev.map((idx) => {
-          const delta = (Math.random() - 0.48) * 4.5;
-          const newPrice = Number((idx.price + delta).toFixed(2));
-          return {
-            ...idx,
-            price: newPrice,
-          };
-        })
+      setIstTime(
+        `${now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })} IST`
       );
-    }, 3800);
-
-    return () => {
-      clearInterval(timeInterval);
-      clearInterval(tickInterval);
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(now);
+      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+      const mins = parseInt(get("hour")) * 60 + parseInt(get("minute"));
+      const weekday = !["Sat", "Sun"].includes(get("weekday"));
+      setMarketOpen(weekday && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30);
     };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
   }, []);
 
   return (
@@ -86,7 +73,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
 
         {/* Live Index Tickers */}
         <div className="hidden lg:flex items-center gap-4 text-xs font-mono overflow-x-auto py-1 scrollbar-none">
-          {indices.map((idx) => (
+          {(indices ?? []).map((idx) => (
             <div
               key={idx.symbol}
               className="flex items-center gap-2 px-2.5 py-1 rounded bg-[#101322] border border-[#f3ecdc]/10 shrink-0"
@@ -106,6 +93,11 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
               </span>
             </div>
           ))}
+          {!indices && indicesError && (
+            <span className="text-[11px] text-[#ff6f91]/80" title={indicesError.message}>
+              Index feed unavailable
+            </span>
+          )}
         </div>
       </div>
 
@@ -131,8 +123,10 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
         <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#f3ecdc]/60">
           <Clock className="w-3.5 h-3.5 text-[#f3ecdc]/40" />
           <span>{istTime}</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-[#6ff2c2] ml-1" />
-          <span className="text-[11px] text-[#6ff2c2]">NSE Live</span>
+          <span className={`w-1.5 h-1.5 rounded-full ml-1 ${marketOpen ? "bg-[#6ff2c2]" : "bg-[#f3ecdc]/30"}`} />
+          <span className={`text-[11px] ${marketOpen ? "text-[#6ff2c2]" : "text-[#f3ecdc]/50"}`} title="Prices are delayed ~15 minutes">
+            {marketOpen ? "NSE Open · ~15m delay" : "NSE Closed"}
+          </span>
         </div>
 
         {/* AI Dock Toggle Button */}

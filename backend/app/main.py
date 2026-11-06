@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import init_db
 from app.errors import ApiError
 from app.logging_setup import setup_logging
-from app.routers import auth, backtest, chat, funds, portfolio, search, stocks, ws
+from app.routers import auth, backtest, chat, funds, market, portfolio, search, stocks, ws
 
 setup_logging()
 log = logging.getLogger("nightfield")
@@ -77,6 +77,6 @@ async def health():
     return {"status": "ok"}
 
 
-for r in (search.router, stocks.router, funds.router, auth.router, portfolio.router, chat.router,
+for r in (search.router, market.router, stocks.router, funds.router, auth.router, portfolio.router, chat.router,
           backtest.router, ws.router):
     app.include_router(r)

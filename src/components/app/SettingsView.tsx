@@ -2,19 +2,39 @@
  * Terminal Settings & Disclosures View for NIGHTFIELD (/app/settings)
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Settings, ShieldCheck, Database, RefreshCw, Trash2, CheckCircle2 } from "lucide-react";
 import { APP_NAME } from "../../lib/constants";
+import { API_URL, USE_MOCK, request } from "../../lib/http";
+import { api } from "../../lib/api";
+import { auth, User } from "../../lib/auth";
 
 export const SettingsView: React.FC = () => {
   const [cleared, setCleared] = useState(false);
-  const useMock = import.meta.env.VITE_USE_MOCK !== "false";
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
+  const [user, setUser] = useState<User | null>(auth.getUser());
+  const useMock = USE_MOCK;
+  const apiUrl = API_URL;
 
-  const handleClearCache = () => {
-    localStorage.removeItem("nightfield_paper_portfolio");
-    setCleared(true);
-    setTimeout(() => setCleared(false), 2000);
+  useEffect(() => auth.subscribe(setUser), []);
+
+  useEffect(() => {
+    if (useMock) return;
+    request<{ status: string }>("/api/health")
+      .then((r) => setHealth(r.status === "ok" ? "ok" : "down"))
+      .catch(() => setHealth("down"));
+  }, [useMock]);
+
+  const handleClearCache = async () => {
+    setResetError(null);
+    try {
+      await api.resetPortfolio();
+      setCleared(true);
+      setTimeout(() => setCleared(false), 2000);
+    } catch (e) {
+      setResetError((e as Error).message);
+    }
   };
 
   return (
@@ -41,6 +61,22 @@ export const SettingsView: React.FC = () => {
                 {useMock ? "Deterministic Mock Mode (Demo Active)" : "Live FastAPI Backend"}
               </span>
             </div>
+            {!useMock && (
+              <div className="flex justify-between items-center">
+                <span className="text-[#f3ecdc]/60">Backend Status</span>
+                <span className={health === "ok" ? "text-[#6ff2c2]" : health === "down" ? "text-[#ff6f91]" : "text-[#f3ecdc]/50"}>
+                  {health === "ok" ? "Connected" : health === "down" ? "Unreachable - start the backend" : "Checking..."}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between items-center">
+              <span className="text-[#f3ecdc]/60">Session</span>
+              <span className="text-[#f3ecdc]">{user ? user.email : "Signed out"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[#f3ecdc]/60">Market Data</span>
+              <span className="text-[#f3ecdc]">{useMock ? "Sample data" : "Yahoo Finance (~15 min delayed)"}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-[#f3ecdc]/60">API Gateway Endpoint</span>
               <span className="text-[#f3ecdc]">{apiUrl}</span>
@@ -59,13 +95,13 @@ export const SettingsView: React.FC = () => {
         <div>
           <h2 className="text-sm font-bold text-[#f3ecdc] mb-3 flex items-center gap-2">
             <RefreshCw className="w-4 h-4 text-[#6ff2c2]" />
-            <span>Local Analytical Cache</span>
+            <span>Paper Portfolio</span>
           </h2>
           <div className="bg-[#101222] p-4 rounded-xl border border-[#f3ecdc]/10 flex items-center justify-between">
             <div>
               <div className="text-[#f3ecdc] font-semibold">Reset Paper Portfolio Data</div>
               <div className="text-[11px] text-[#f3ecdc]/50 mt-0.5">
-                Clears saved virtual trade orders and resets capital back to ₹10,00,000.
+                Deletes your virtual positions and trade history and resets capital to ₹10,00,000 (requires sign-in).
               </div>
             </div>
             <button
@@ -73,9 +109,10 @@ export const SettingsView: React.FC = () => {
               className="px-3.5 py-2 rounded-xl bg-[#ff6f91]/15 text-[#ff6f91] hover:bg-[#ff6f91]/25 border border-[#ff6f91]/30 transition-all cursor-pointer flex items-center gap-2"
             >
               {cleared ? <CheckCircle2 className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
-              <span>{cleared ? "Cleared" : "Clear Cache"}</span>
+              <span>{cleared ? "Reset" : "Reset Portfolio"}</span>
             </button>
           </div>
+          {resetError && <div className="mt-2 text-[#ff6f91]">{resetError}</div>}
         </div>
 
         <div>

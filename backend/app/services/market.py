@@ -34,7 +34,8 @@ NIFTY = [
     ("HAL", "Hindustan Aeronautics"), ("IRCTC", "IRCTC"), ("DMART", "Avenue Supermarts (DMart)"),
     ("PIDILITIND", "Pidilite Industries"), ("VEDL", "Vedanta Ltd"), ("ETERNAL", "Eternal (Zomato)"),
 ]
-INDICES = {"^NSEI": "Nifty 50", "^BSESN": "Sensex", "^NSEBANK": "Bank Nifty"}
+INDICES = {"^NSEI": "Nifty 50", "^BSESN": "Sensex", "^NSEBANK": "Bank Nifty", "^CNXIT": "Nifty IT"}
+POPULAR = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS"]
 NAME_BY_BASE = {s: n for s, n in NIFTY}
 
 # period -> (yfinance period, interval, intraday?)
@@ -233,7 +234,7 @@ async def get_quote(symbol: str) -> dict:
     }
 
 
-@cached(30, "quick")
+@cached(15, "quick")
 async def quick_quote(symbol: str) -> dict:
     sym = await resolve_symbol(symbol)
     raw = await run_blocking(_fetch_quick_blocking, sym, label="Yahoo Finance quote")
@@ -349,4 +350,27 @@ async def search_stocks(q: str, limit: int = 12) -> list[dict]:
         out.append({"symbol": it["symbol"], "name": it["name"], "type": "stock",
                     "exchange": exchange_for(it["symbol"]),
                     "price": p["price"] if ok else 0, "changePercent": p["changePercent"] if ok else 0})
+    return out
+
+
+@cached(15, "indices")
+async def get_indices() -> list[dict]:
+    """Live (delayed) benchmark index strip for the terminal header. Failed indices are skipped."""
+    syms = list(INDICES)
+    res = await asyncio.gather(*[quick_quote(s) for s in syms], return_exceptions=True)
+    out = [{"symbol": s, "name": INDICES[s], "price": r["price"], "change": r["change"],
+            "changePercent": r["changePercent"], "isUp": r["change"] >= 0, "delayed": True}
+           for s, r in zip(syms, res) if isinstance(r, dict) and r.get("price")]
+    if not out:
+        raise UpstreamError("Index data is unavailable right now - Yahoo Finance may be throttling. Retry shortly.")
+    return out
+
+
+@cached(30, "popular")
+async def get_popular() -> list[dict]:
+    """Default watchlist shown to guests / users with an empty watchlist."""
+    res = await asyncio.gather(*[get_quote(s) for s in POPULAR], return_exceptions=True)
+    out = [r for r in res if isinstance(r, dict)]
+    if not out:
+        raise UpstreamError("Market data is unavailable right now - please retry shortly.")
     return out

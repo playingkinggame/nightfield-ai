@@ -20,6 +20,16 @@ class SearchResult(CamelModel):
     change_percent: float = 0
 
 
+class IndexQuote(CamelModel):
+    symbol: str
+    name: str
+    price: float
+    change: float
+    change_percent: float
+    is_up: bool
+    delayed: bool = True
+
+
 class StockQuote(CamelModel):
     symbol: str
     name: str

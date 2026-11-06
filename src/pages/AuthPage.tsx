@@ -1,13 +1,13 @@
 /**
  * Minimal luxury Auth Page for NIGHTFIELD (/login & /signup)
- * Features email/password and Google authentication via Supabase Auth placeholder.
+ * Email/password accounts backed by the FastAPI backend (/api/auth/signup, /api/auth/login) with JWT sessions.
  */
 
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { auth } from "../lib/auth";
 import { APP_NAME } from "../lib/constants";
-import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
 export const AuthPage: React.FC = () => {
   const navigate = useNavigate();
@@ -27,6 +27,10 @@ export const AuthPage: React.FC = () => {
       setError("Please provide a valid email address.");
       return;
     }
+    if (isSignUp && password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -37,19 +41,7 @@ export const AuthPage: React.FC = () => {
       }
       navigate("/app");
     } catch (err) {
-      setError("Authentication failed. Please verify credentials.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    try {
-      setLoading(true);
-      await auth.signInWithGoogle();
-      navigate("/app");
-    } catch {
-      setError("Google authentication failed.");
+      setError(err instanceof Error && err.message ? err.message : "Authentication failed. Please verify credentials.");
     } finally {
       setLoading(false);
     }
@@ -92,39 +84,6 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          {/* Google Auth Button */}
-          <button
-            onClick={handleGoogleAuth}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-[#f3ecdc]/20 bg-[#121422] hover:bg-[#181b2e] active:scale-[0.99] text-xs font-mono text-[#f3ecdc] transition-all cursor-pointer mb-5"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="#EA4335"
-                d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
-              />
-              <path
-                fill="#4285F4"
-                d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"
-              />
-            </svg>
-            <span>Continue with Google</span>
-          </button>
-
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-[#f3ecdc]/10" />
-            <span className="text-[11px] font-mono text-[#f3ecdc]/40 uppercase tracking-widest">or</span>
-            <div className="flex-1 h-px bg-[#f3ecdc]/10" />
-          </div>
-
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
@@ -155,11 +114,6 @@ export const AuthPage: React.FC = () => {
             <div>
               <div className="flex justify-between items-center mb-1.5">
                 <label className="text-xs font-mono text-[#f3ecdc]/70">Password</label>
-                {!isSignUp && (
-                  <span className="text-[11px] font-mono text-[#ffb454] hover:underline cursor-pointer">
-                    Forgot key?
-                  </span>
-                )}
               </div>
               <input
                 type="password"
@@ -167,6 +121,8 @@ export const AuthPage: React.FC = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
                 required
+                minLength={isSignUp ? 8 : undefined}
+                autoComplete={isSignUp ? "new-password" : "current-password"}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#121422] border border-[#f3ecdc]/15 text-[#f3ecdc] text-sm focus:outline-none focus:border-[#f3ecdc]"
               />
             </div>

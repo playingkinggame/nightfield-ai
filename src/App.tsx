@@ -3,7 +3,7 @@
  * Features client-side routing, route-level code structure, and persistent film-grain layer.
  */
 
-import React from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LandingPage } from "./pages/LandingPage";
 import { AuthPage } from "./pages/AuthPage";
@@ -13,8 +13,14 @@ import { StockView } from "./components/app/StockView";
 import { FundsView } from "./components/app/FundsView";
 import { PortfolioView } from "./components/app/PortfolioView";
 import { SettingsView } from "./components/app/SettingsView";
+import { auth } from "./lib/auth";
 
 export default function App() {
+  // Re-validate any stored JWT against the backend once on start (clears stale sessions)
+  useEffect(() => {
+    auth.refresh();
+  }, []);
+
   return (
     <BrowserRouter>
       {/* Subtle global film-grain overlay */}

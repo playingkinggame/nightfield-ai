@@ -4,9 +4,10 @@ import logging
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.errors import BadRequest, NotFoundError, validate_symbol
 from app.models import Position, Trade, User, WatchlistItem
@@ -123,6 +124,16 @@ async def trade(body: TradeIn, user: User = Depends(get_current_user), db: Sessi
     db.commit()
     db.refresh(t)
     return {"trade": _trade_rec(t), "cash": round(user.cash, 2), "holding": holding}
+
+
+@router.post("/portfolio/reset", response_model=PortfolioOut)
+async def reset_portfolio(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Wipe positions + trade history and restore the starting virtual cash."""
+    db.execute(delete(Position).where(Position.user_id == user.id))
+    db.execute(delete(Trade).where(Trade.user_id == user.id))
+    user.cash = settings.starting_cash
+    db.commit()
+    return await portfolio(user, db)
 
 
 async def _portfolio_drawdown(holdings: list[dict]) -> float:
